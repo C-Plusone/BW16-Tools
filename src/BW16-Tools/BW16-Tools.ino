@@ -133,6 +133,25 @@ bool showConfirmModal(const String& line1,
                       const String& leftHint = String("《 取消"),
                       const String& rightHint = String("确认 》"));
 
+// ===== Home Menu: unified registry and actions =====
+typedef void (*HomeAction)();
+struct HomeMenuItem {
+  const char* label;
+  HomeAction action;
+};
+
+// Forward declarations for home actions (handlers)
+void homeActionSelectSSID();
+void homeActionAttackMenu();
+void homeActionQuickScan();
+void homeActionPhishing();
+void homeActionConnInterfere();
+void homeActionApFlood();
+void homeActionAttackDetect();
+void homeActionPacketMonitor();
+void homeActionDeepScan();
+void homeActionWebUI();
+
 // VARIABLES
 typedef struct {
   String ssid;
@@ -291,8 +310,23 @@ int homeStartIndex = 0;
 // 首页相对选择索引（与攻击页的attackstate类似）
 int homeState = 0; // 初始化为0，对应第一项
 
-// 首页菜单常量定义
-const int HOME_MAX_ITEMS = 10;
+// Unified registry: add new items here only (main menu)
+static const HomeMenuItem g_homeMenuItems[] = {
+  {"选择AP/SSID",            homeActionSelectSSID},
+  {"常规攻击[Attack]",       homeActionAttackMenu},
+  {"快速扫描[Scan]",         homeActionQuickScan},
+  {"密码钓鱼[Phishing]",     homeActionPhishing},
+  {"连接/信道干扰[CI]",      homeActionConnInterfere},
+  {"AP洪水攻击[Dos]",        homeActionApFlood},
+  {"攻击帧检测[Detect]",     homeActionAttackDetect},
+  {"监视器[Monitor]",        homeActionPacketMonitor},
+  {"深度扫描 DeepScan",      homeActionDeepScan},
+  {"启动[Web UI]",           homeActionWebUI}
+};
+static const int g_homeMenuCount = (int)(sizeof(g_homeMenuItems) / sizeof(g_homeMenuItems[0]));
+static inline int getHomeMaxItems() { return g_homeMenuCount; }
+#define HOME_MAX_ITEMS (getHomeMaxItems())
+
 const int HOME_PAGE_SIZE = 3;
 const int HOME_ITEM_HEIGHT = 20; // 增加行高以占满屏幕高度
 const int HOME_Y_OFFSET = 2;
@@ -2138,24 +2172,10 @@ void drawHomeScrollbarFraction(float startIndexF) {
 // 滚动条已移除
 
 // ===== 动画与基础绘制辅助 =====
-// 基础绘制：主页（不带高亮）
-void drawHomeMenuBase() {
-  display.clearDisplay();
-  display.setTextSize(1);
-  const char* items[] = {"选择AP/SSID", "常规攻击[Attack]", "快速扫描[Scan]", "密码钓鱼[Phishing]", "连接/信道干扰[CI]", "AP洪水攻击[Dos]", "攻击帧检测[Detect]", "监视器[Monitor]", "深度扫描 DeepScan", "启动[Web UI]"};
-  int itemHeight = 16; // 减小行高以容纳5个选项
-  int rectHeight = 14;
-  for (int i = 0; i < 5; i++) {
-    int rectY = 2 + i * itemHeight;
-    int textY = rectY + 10;
-    u8g2_for_adafruit_gfx.setFontMode(1);
-    u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
-    u8g2_for_adafruit_gfx.setCursor(5, textY);
-    u8g2_for_adafruit_gfx.print(items[i]);
-    drawRightChevron(rectY, rectHeight, false);
-  }
-  display.display();
-}
+// 基础绘制：主页（不带高亮） - 已废弃，使用 drawHomeMenuBasePaged 代替
+// void drawHomeMenuBase() {
+//   // 此函数已被 drawHomeMenuBasePaged 和 drawHomeMenuBasePaged_NoFlush 替代
+// }
 
 // ===== WebTest OLED Pages (defined after globals to fix forward references) =====
 void drawWebTestMain() {
@@ -2382,9 +2402,9 @@ static int g_homeBaseStartIndex = 0;
 void drawHomeMenuBasePaged(int startIndex) {
   display.clearDisplay();
   display.setTextSize(1);
-  const char* items[] = {"选择AP/SSID", "常规攻击[Attack]", "快速扫描[Scan]", "密码钓鱼[Phishing]", "连接/信道干扰[CI]", "AP洪水攻击[Dos]", "攻击帧检测[Detect]", "监视器[Monitor]", "深度扫描 DeepScan", "启动[Web UI]"};
-  const int MAX_DISPLAY_ITEMS = 3; // 每页3项
-  for (int i = 0; i < MAX_DISPLAY_ITEMS && i < HOME_PAGE_SIZE; i++) {
+  // 计算当前页实际显示的项目数量
+  int currentPageItems = (HOME_PAGE_SIZE < (HOME_MAX_ITEMS - startIndex)) ? HOME_PAGE_SIZE : (HOME_MAX_ITEMS - startIndex);
+  for (int i = 0; i < currentPageItems; i++) {
     int menuIndex = startIndex + i;
     if (menuIndex >= HOME_MAX_ITEMS) break;
     int rectY = HOME_Y_OFFSET + i * HOME_ITEM_HEIGHT;
@@ -2392,7 +2412,7 @@ void drawHomeMenuBasePaged(int startIndex) {
     u8g2_for_adafruit_gfx.setFontMode(1);
     u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
     u8g2_for_adafruit_gfx.setCursor(5, textY);
-    u8g2_for_adafruit_gfx.print(items[menuIndex]);
+    u8g2_for_adafruit_gfx.print(g_homeMenuItems[menuIndex].label);
     // 使用与攻击页完全一致的右箭头指示器
     drawRightChevron(rectY, HOME_RECT_HEIGHT, false);
   }
@@ -2404,17 +2424,33 @@ void drawHomeMenuBasePaged(int startIndex) {
 void drawHomeMenuBasePaged_NoFlush(int startIndex) {
   display.clearDisplay();
   display.setTextSize(1);
-  const char* items[] = {"选择AP/SSID", "常规攻击[Attack]", "快速扫描[Scan]", "密码钓鱼[Phishing]", "连接/信道干扰[CI]", "AP洪水攻击[Dos]", "攻击帧检测[Detect]", "监视器[Monitor]", "深度扫描 DeepScan", "启动[Web UI]"};
-  const int MAX_DISPLAY_ITEMS = 3;
-  for (int i = 0; i < MAX_DISPLAY_ITEMS && i < HOME_PAGE_SIZE; i++) {
+  // 计算当前页实际显示的项目数量
+  int currentPageItems = (HOME_PAGE_SIZE < (HOME_MAX_ITEMS - startIndex)) ? HOME_PAGE_SIZE : (HOME_MAX_ITEMS - startIndex);
+  for (int i = 0; i < currentPageItems; i++) {
     int menuIndex = startIndex + i;
     if (menuIndex >= HOME_MAX_ITEMS) break;
     int rectY = HOME_Y_OFFSET + i * HOME_ITEM_HEIGHT;
-    int textY = rectY + 12;
+    int textY = rectY + 13; // 下移2px：从+11改为+13
+    
+    // 裁剪标签
+    String label = g_homeMenuItems[menuIndex].label;
+    int maxTextWidth = display.width() - UI_RIGHT_GUTTER - 15;
+    int labelWidth = u8g2_for_adafruit_gfx.getUTF8Width(label.c_str());
+    if (labelWidth > maxTextWidth) {
+      while (label.length() > 0 && 
+             u8g2_for_adafruit_gfx.getUTF8Width(label.c_str()) > maxTextWidth - 20) {
+        label.remove(label.length() - 1);
+        while (label.length() > 0 && ((uint8_t)label[label.length()-1] & 0xC0) == 0x80) {
+          label.remove(label.length() - 1);
+        }
+      }
+      label += "..";
+    }
+    
     u8g2_for_adafruit_gfx.setFontMode(1);
     u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
     u8g2_for_adafruit_gfx.setCursor(5, textY);
-    u8g2_for_adafruit_gfx.print(items[menuIndex]);
+    u8g2_for_adafruit_gfx.print(label);
     drawRightChevron(rectY, HOME_RECT_HEIGHT, false);
   }
   // 绘制滚动条（无刷新版本）
@@ -2425,19 +2461,35 @@ void drawHomeMenuBasePagedShim() { drawHomeMenuBasePaged_NoFlush(g_homeBaseStart
 // 内部辅助：绘制某页并整体添加y偏移（不刷新）。偏移允许为负/正，用于翻页过渡。
 static inline void drawHomePageWithOffset_NoFlush(int startIndex, int yOffset) {
   display.setTextSize(1);
-  const char* items[] = {"选择AP/SSID", "常规攻击[Attack]", "快速扫描[Scan]", "密码钓鱼[Phishing]", "连接/信道干扰[CI]", "AP洪水攻击[Dos]", "攻击帧检测[Detect]", "监视器[Monitor]", "深度扫描 DeepScan", "启动[Web UI]"};
-  const int MAX_DISPLAY_ITEMS = 3;
-  for (int i = 0; i < MAX_DISPLAY_ITEMS && i < HOME_PAGE_SIZE; i++) {
+  // 计算当前页实际显示的项目数量
+  int currentPageItems = (HOME_PAGE_SIZE < (HOME_MAX_ITEMS - startIndex)) ? HOME_PAGE_SIZE : (HOME_MAX_ITEMS - startIndex);
+  for (int i = 0; i < currentPageItems; i++) {
     int menuIndex = startIndex + i;
     if (menuIndex >= HOME_MAX_ITEMS) break;
     int rectY = HOME_Y_OFFSET + i * HOME_ITEM_HEIGHT + yOffset;
-    int textY = rectY + 12;
+    int textY = rectY + 13; // 下移2px：从+11改为+13
     // 仅绘制可见区域，避免越界绘制
     if (rectY > display.height() || rectY + HOME_RECT_HEIGHT < 0) continue;
+    
+    // 裁剪标签
+    String label = g_homeMenuItems[menuIndex].label;
+    int maxTextWidth = display.width() - UI_RIGHT_GUTTER - 15;
+    int labelWidth = u8g2_for_adafruit_gfx.getUTF8Width(label.c_str());
+    if (labelWidth > maxTextWidth) {
+      while (label.length() > 0 && 
+             u8g2_for_adafruit_gfx.getUTF8Width(label.c_str()) > maxTextWidth - 20) {
+        label.remove(label.length() - 1);
+        while (label.length() > 0 && ((uint8_t)label[label.length()-1] & 0xC0) == 0x80) {
+          label.remove(label.length() - 1);
+        }
+      }
+      label += "..";
+    }
+    
     u8g2_for_adafruit_gfx.setFontMode(1);
     u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
     u8g2_for_adafruit_gfx.setCursor(5, textY);
-    u8g2_for_adafruit_gfx.print(items[menuIndex]);
+    u8g2_for_adafruit_gfx.print(label);
     drawRightChevron(rectY, HOME_RECT_HEIGHT, false);
   }
 }
@@ -2875,7 +2927,7 @@ void animateMoveHome(int yFrom, int yTo, int rectHeight, int startIndex) {
 
 void drawHomeMenu() {
   static int prevState = -1;
-  const int MAX_DISPLAY_ITEMS = 3; // 保持每页3项
+  const int MAX_DISPLAY_ITEMS = 3; // 保持每页３项
 
   int startIndex = homeStartIndex;
   g_homeBaseStartIndex = startIndex;
@@ -2897,27 +2949,46 @@ void drawHomeMenu() {
 
   display.clearDisplay();
   display.setTextSize(1);
-  const char* items[] = {"选择AP/SSID", "常规攻击[Attack]", "快速扫描[Scan]", "密码钓鱼[Phishing]", "连接/信道干扰[CI]", "AP洪水攻击[Dos]", "攻击帧检测[Detect]", "监视器[Monitor]", "深度扫描 DeepScan", "启动[Web UI]"};
   // 计算当前页实际显示的项目数量
   int currentPageItems = (HOME_PAGE_SIZE < (HOME_MAX_ITEMS - startIndex)) ? HOME_PAGE_SIZE : (HOME_MAX_ITEMS - startIndex);
-  for (int i = 0; i < MAX_DISPLAY_ITEMS && i < currentPageItems; i++) {
+  for (int i = 0; i < currentPageItems; i++) {
     int menuIndex = startIndex + i;
     if (menuIndex >= HOME_MAX_ITEMS) break;
     int rectY = HOME_Y_OFFSET + i * HOME_ITEM_HEIGHT;
-    int textY = rectY + 12; // 调整文字垂直位置
+    int textY = rectY + 13; // 主菜单文字整体下移2px
     bool isSel = (i == homeState);
+    
+    // 获取并裁剪标签，防止文字超出选择框范围
+    String label = g_homeMenuItems[menuIndex].label;
+    int maxTextWidth = display.width() - UI_RIGHT_GUTTER - 15; // 留出箭头和边距
+    int labelWidth = u8g2_for_adafruit_gfx.getUTF8Width(label.c_str());
+    
+    if (labelWidth > maxTextWidth) {
+      // UTF-8安全裁剪
+      while (label.length() > 0 && 
+             u8g2_for_adafruit_gfx.getUTF8Width(label.c_str()) > maxTextWidth - 20) {
+        // 移除最后一个字符（UTF-8安全）
+        label.remove(label.length() - 1);
+        // 跳过UTF-8续字节
+        while (label.length() > 0 && ((uint8_t)label[label.length()-1] & 0xC0) == 0x80) {
+          label.remove(label.length() - 1);
+        }
+      }
+      label += "..";
+    }
+    
     if (isSel) {
       // 使用与攻击页完全一致的高亮效果（减去右侧滚动条区域避免覆盖）
       display.fillRoundRect(0, rectY, display.width() - UI_RIGHT_GUTTER, HOME_RECT_HEIGHT, 4, SSD1306_WHITE);
       u8g2_for_adafruit_gfx.setFontMode(1);
       u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_BLACK);
       u8g2_for_adafruit_gfx.setCursor(5, textY + 1);
-      u8g2_for_adafruit_gfx.print(items[menuIndex]);
+      u8g2_for_adafruit_gfx.print(label);
     } else {
       u8g2_for_adafruit_gfx.setFontMode(1);
       u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
       u8g2_for_adafruit_gfx.setCursor(5, textY + 1);
-      u8g2_for_adafruit_gfx.print(items[menuIndex]);
+      u8g2_for_adafruit_gfx.print(label);
     }
     // 使用与攻击页完全一致的右箭头指示器
     drawRightChevron(rectY, HOME_RECT_HEIGHT, isSel);
@@ -2941,6 +3012,7 @@ inline void homeMoveUp(unsigned long currentTime) {
   if (homeState > 0) {
     setHomeSelection(homeStartIndex, homeState - 1);
   } else if (homeStartIndex > 0) {
+    // 向上滚动一项
     int prevStart = homeStartIndex;
     setHomeSelection(homeStartIndex - 1, 0);
     animateHomePageFlip(prevStart, homeStartIndex);
@@ -2956,15 +3028,16 @@ inline void homeMoveDown(unsigned long currentTime) {
   int currentPageItems = (HOME_PAGE_SIZE < (HOME_MAX_ITEMS - homeStartIndex)) ? HOME_PAGE_SIZE : (HOME_MAX_ITEMS - homeStartIndex);
   if (homeState < currentPageItems - 1) {
     setHomeSelection(homeStartIndex, homeState + 1);
-  } else if (homeStartIndex + HOME_PAGE_SIZE < HOME_MAX_ITEMS) {
+  } else if (homeStartIndex + homeState + 1 < HOME_MAX_ITEMS) {
+    // 向下滚动一项（确保不超过总项目数）
     int prevStart = homeStartIndex;
     int nextStartIndex = homeStartIndex + 1;
     // 计算下一页应该显示的项目数量
     int nextPageItems = (HOME_PAGE_SIZE < (HOME_MAX_ITEMS - nextStartIndex)) ? HOME_PAGE_SIZE : (HOME_MAX_ITEMS - nextStartIndex);
-    // 设置homeState为最后一行的索引
-    int nextHomeState = nextPageItems - 1;
+    // 设置homeState为最后一行的索引（确保在新页范围内）
+    int nextHomeState = (nextPageItems > 0) ? (nextPageItems - 1) : 0;
     setHomeSelection(nextStartIndex, nextHomeState);
-    animateHomePageFlip(prevStart, homeStartIndex);
+    animateHomePageFlip(prevStart, nextStartIndex);
     g_skipNextSelectAnim = true;
   }
   // 当到达最后一页的最后一个项目时，不执行任何操作（阻止继续向下移动）
@@ -2975,130 +3048,11 @@ inline void homeMoveDown(unsigned long currentTime) {
 inline void handleHomeOk() {
   if (digitalRead(BTN_OK) != LOW) return;
   delay(400);
-  switch (menustate) {
-    case 0:
-      drawssid();
-      break;
-    case 1:
-      drawattack();
-      break;
-    case 2:
-      // 稳定按键状态，为确认弹窗做准备
-      stabilizeButtonState();
-      if (showConfirmModal("快速扫描AP/SSID")) {
-        drawscan();
-      }
-      break;
-    case 3:
-      if (SelectedVector.empty()) {
-        showModalMessage("请先选择AP/SSID");
-      } else if (g_webTestLocked || g_webUILocked) {
-        display.clearDisplay();
-        u8g2_for_adafruit_gfx.setFontMode(1);
-        u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
-        u8g2_for_adafruit_gfx.setCursor(5, 20);
-        u8g2_for_adafruit_gfx.print("为确保资源完全释放");
-        u8g2_for_adafruit_gfx.setCursor(5, 40);
-        u8g2_for_adafruit_gfx.print("请重启设备后再次运行");
-        u8g2_for_adafruit_gfx.setCursor(5, 60);
-        u8g2_for_adafruit_gfx.print("《 返回主菜单");
-        display.display();
-        while (digitalRead(BTN_BACK) != LOW) { delay(10); }
-        while (digitalRead(BTN_BACK) == LOW) { delay(10); }
-      } else {
-        if (apWebPageSelectionMenu()) {
-          // 稳定按键状态，为确认弹窗做准备
-          stabilizeButtonState();
-          
-          bool confirmed = showConfirmModal("启动钓鱼模式");
-          if (confirmed) {
-            display.clearDisplay();
-            u8g2_for_adafruit_gfx.setFontMode(1);
-            u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
-            const char* msg = "正在启动...";
-            int w = u8g2_for_adafruit_gfx.getUTF8Width(msg);
-            int x = (display.width() - w) / 2;
-            u8g2_for_adafruit_gfx.setCursor(x, 32);
-            u8g2_for_adafruit_gfx.print(msg);
-            display.display();
-            if (!startWebTest()) {
-              showModalMessage("启动失败，请重试");
-            } else {
-              // removed: legacy WebUI deauth start
-            }
-          }
-        }
-      }
-      break;
-    case 4:
-      // 连接干扰
-      if (SelectedVector.empty()) { showModalMessage("请先选择AP/SSID"); break; }
-      // 显示连接干扰说明页面
-      if (showLinkJammerInfoPage()) {
-        stabilizeButtonState();
-        // 多选目标时显示确认弹窗
-        if (SelectedVector.size() > 1) {
-          if (showConfirmModal("建议只选择一个目标", "《 返回", "继续 》")) {
-            LinkJammer();
-          }
-        } else {
-          if (showConfirmModal("启动连接干扰")) {
-            LinkJammer();
-          }
-        }
-      }
-      break;
-    case 5:
-      // 请求发送（认证/关联请求泛洪 / AP洪水攻击）
-      if (SelectedVector.empty()) { showModalMessage("请先选择AP/SSID"); break; }
-      // 先显示AP洪水攻击说明页面；确认则继续，返回则回到主菜单
-      if (showApFloodInfoPage()) {
-        // 稳定按键状态，为确认弹窗做准备
-        stabilizeButtonState();
-        // 多选目标时显示确认弹窗
-        if (SelectedVector.size() > 1) {
-          if (showConfirmModal("建议只选择一个目标", "《 返回", "继续 》")) {
-            RequestFlood();
-          }
-        } else {
-          if (showConfirmModal("启动Dos攻击")) {
-            RequestFlood();
-          }
-        }
-      }
-      break;
-    case 6:
-      // 攻击检测页面入口
-      // 稳定按键状态，为确认弹窗做准备
-      stabilizeButtonState();
-      if (showConfirmModal("启动攻击帧检测")) {
-        drawAttackDetectPage();
-      }
-      break;
-    case 7:
-      // 数据包侦测页面入口
-      // 稳定按键状态，为确认弹窗做准备
-      stabilizeButtonState();
-      if (showConfirmModal("启动数据包监视")) {
-        drawPacketDetectPage();
-      }
-      break;
-    case 8:
-      // 稳定按键状态，为确认弹窗做准备
-      stabilizeButtonState();
-      if (showConfirmModal("启动深度扫描")) {
-        drawDeepScan();
-      }
-      break;
-    case 9:
-      // 稳定按键状态，为确认弹窗做准备
-      stabilizeButtonState();
-      if (showConfirmModal("启动Web UI")) {
-        startWebUI();
-      }
-      break;
-    default:
-      break;
+  // 使用统一的动作函数系统
+  if (menustate >= 0 && menustate < HOME_MAX_ITEMS) {
+    if (g_homeMenuItems[menustate].action != nullptr) {
+      g_homeMenuItems[menustate].action();
+    }
   }
 }
 
@@ -6056,7 +6010,7 @@ void loop() {
   // 连接干扰运行时无独立状态机，进入功能内自循环直到用户停止
   
   // 首页菜单显示 - 与攻击页完全一致的逻辑
-  if (menustate >= 0 && menustate < 10) {
+  if (menustate >= 0 && menustate < HOME_MAX_ITEMS) {
     drawHomeMenu();
   }
   
@@ -7991,5 +7945,143 @@ bool showLinkJammerInfoPage() {
     display.display();
     
     delay(10); // 短暂延时避免CPU占用过高
+  }
+}
+
+// ============ 统一菜单动作函数实现 ============
+// 所有首页菜单项的动作函数在此实现
+
+void homeActionSelectSSID() {
+  drawssid();
+}
+
+void homeActionAttackMenu() {
+  drawattack();
+}
+
+void homeActionQuickScan() {
+  // 稳定按键状态，为确认弹窗做准备
+  stabilizeButtonState();
+  if (showConfirmModal("快速扫描AP/SSID")) {
+    drawscan();
+  }
+}
+
+void homeActionPhishing() {
+  if (SelectedVector.empty()) {
+    showModalMessage("请先选择AP/SSID");
+  } else if (g_webTestLocked || g_webUILocked) {
+    display.clearDisplay();
+    u8g2_for_adafruit_gfx.setFontMode(1);
+    u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
+    u8g2_for_adafruit_gfx.setCursor(5, 20);
+    u8g2_for_adafruit_gfx.print("为确保资源完全释放");
+    u8g2_for_adafruit_gfx.setCursor(5, 40);
+    u8g2_for_adafruit_gfx.print("请重启设备后再次运行");
+    u8g2_for_adafruit_gfx.setCursor(5, 60);
+    u8g2_for_adafruit_gfx.print("《 返回主菜单");
+    display.display();
+    while (digitalRead(BTN_BACK) != LOW) { delay(10); }
+    while (digitalRead(BTN_BACK) == LOW) { delay(10); }
+  } else {
+    if (apWebPageSelectionMenu()) {
+      // 稳定按键状态，为确认弹窗做准备
+      stabilizeButtonState();
+      
+      bool confirmed = showConfirmModal("启动钓鱼模式");
+      if (confirmed) {
+        display.clearDisplay();
+        u8g2_for_adafruit_gfx.setFontMode(1);
+        u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
+        const char* msg = "正在启动...";
+        int w = u8g2_for_adafruit_gfx.getUTF8Width(msg);
+        int x = (display.width() - w) / 2;
+        u8g2_for_adafruit_gfx.setCursor(x, 32);
+        u8g2_for_adafruit_gfx.print(msg);
+        display.display();
+        if (!startWebTest()) {
+          showModalMessage("启动失败，请重试");
+        }
+      }
+    }
+  }
+}
+
+void homeActionConnInterfere() {
+  // 连接干扰
+  if (SelectedVector.empty()) { 
+    showModalMessage("请先选择AP/SSID"); 
+    return; 
+  }
+  // 显示连接干扰说明页面
+  if (showLinkJammerInfoPage()) {
+    stabilizeButtonState();
+    // 多选目标时显示确认弹窗
+    if (SelectedVector.size() > 1) {
+      if (showConfirmModal("建议只选择一个目标", "《 返回", "继续 》")) {
+        LinkJammer();
+      }
+    } else {
+      if (showConfirmModal("启动连接干扰")) {
+        LinkJammer();
+      }
+    }
+  }
+}
+
+void homeActionApFlood() {
+  // 请求发送（认证/关联请求泛洪 / AP洪水攻击）
+  if (SelectedVector.empty()) { 
+    showModalMessage("请先选择AP/SSID"); 
+    return; 
+  }
+  // 先显示AP洪水攻击说明页面；确认则继续，返回则回到主菜单
+  if (showApFloodInfoPage()) {
+    // 稳定按键状态，为确认弹窗做准备
+    stabilizeButtonState();
+    // 多选目标时显示确认弹窗
+    if (SelectedVector.size() > 1) {
+      if (showConfirmModal("建议只选择一个目标", "《 返回", "继续 》")) {
+        RequestFlood();
+      }
+    } else {
+      if (showConfirmModal("启动Dos攻击")) {
+        RequestFlood();
+      }
+    }
+  }
+}
+
+void homeActionAttackDetect() {
+  // 攻击检测页面入口
+  // 稳定按键状态，为确认弹窗做准备
+  stabilizeButtonState();
+  if (showConfirmModal("启动攻击帧检测")) {
+    drawAttackDetectPage();
+  }
+}
+
+void homeActionPacketMonitor() {
+  // 数据包侦测页面入口
+  // 稳定按键状态，为确认弹窗做准备
+  stabilizeButtonState();
+  if (showConfirmModal("启动数据包监视")) {
+    drawPacketDetectPage();
+  }
+}
+
+void homeActionDeepScan() {
+  // 稳定按键状态，为确认弹窗做准备
+  stabilizeButtonState();
+  if (showConfirmModal("启动深度扫描")) {
+    drawDeepScan();
+  }
+}
+
+void homeActionWebUI() {
+  // 稳定按键状态，为确认弹窗做准备
+  stabilizeButtonState();
+  if (showConfirmModal("启动Web UI")) {
+    startWebUI();
   }
 }

@@ -1,5 +1,17 @@
 # 🛠️ [BW16-Tools](https://github.com/FlyingIceyyds/BW16-Tools)
-基于Ai-Thinker BW16 RTL8720DN 的轻量级综合无线安全测试工具。包含解除身份认证（Deauth），信道干扰（Channel Interference），Deauth/Disassoc帧检测（Detect），密码钓鱼（Phishing），认证/关联帧洪水攻击（Dos）等。仅用于安全性研究和教育目的，请勿滥用。使用Arduino开发。
+基于Ai-Thinker BW16-Kit RTL8720DN 的无线安全测试工具。包含WIFI功能：解除身份认证(Deauth)，信道干扰(Channel Interference)，Deauth/Disassoc帧检测(Detect)，密码钓鱼(Phishing)，认证/关联帧洪水攻击(Dos)，以及BLE功能：蓝牙弹窗攻击，蓝牙信标广播等。仅用于安全性研究和教育目的，请勿滥用。使用Arduino开发。
+
+# 2025-10-05
+创建了一个新的Beta分支，此分支添加了蓝牙BLE相关功能，但有一些BUG未能解决：
+- 1.由于BW16模块设计问题，WIFI和BLE抢占资源导致部分情况下功能异常。
+- 2.疑似BLE功能会导致严重的内存溢出。（影响抓包功能使用，握手包缓存异常）
+
+此项目中内存溢出与资源冲突似乎达成了一种微妙的平衡，以至于大部分功能一切正常，但存在潜在问题，这也是这些BUG难以修复的原因之一。
+
+***简单来说，如果你只需要用到WIFI相关功能，那么建议使用`main`分支的旧版本。
+如果愿意舍弃WIFI的抓包功能以使用蓝牙BLE相关功能，那么请使用`Beta`分支版本***
+
+***如果你成功修复了这些问题，那么随时欢迎为此项目做出贡献***
 
 # 📌 使用须知
 本项目旨在合规前提下用于安全性研究和教育目的，请勿滥用。

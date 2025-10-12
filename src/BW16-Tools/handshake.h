@@ -2005,42 +2005,43 @@ bool hasBothHandshakeDirections() {
   return seenAP && seenClient;
 }
 
+// 2.2 版本后删除了此验证逻辑，提高握手包保存成功率，但会增加误判和无效包概率
 
-// 仅进行M1–M4形态、同一STA、BSSID匹配与回放计数模式校验，不要求Auth/Assoc近时佐证
-static bool isFourWayStructurallyValid() {
-  if (capturedHandshake.frameCount < 4) return false;
-  bool hasMessage1 = false, hasMessage2 = false, hasMessage3 = false, hasMessage4 = false;
-  bool staLocked = false; uint8_t staMac[6] = {0};
-  bool staConsistent = true;
-  const uint8_t *rcM1 = nullptr, *rcM2 = nullptr, *rcM3 = nullptr, *rcM4 = nullptr;
-  for (unsigned int i = 0; i < capturedHandshake.frameCount; i++) {
-    ParsedEapolInfo einfo;
-    bool p = parseEapol(capturedHandshake.frames[i].data, capturedHandshake.frames[i].length, einfo);
-    if (!p) p = parseEapolFromEthertype(capturedHandshake.frames[i].data, capturedHandshake.frames[i].length, einfo);
-    if (!p) continue;
-    if (!(einfo.descriptorType == 0x02 && ((einfo.keyInfo & (1 << 3)) != 0))) continue;
-    // Derived BSSID must match target
-    const uint8_t *da, *sa, *bb; if (!extractAddrsForDataFrame(capturedHandshake.frames[i].data, capturedHandshake.frames[i].length, da, sa, bb)) continue;
-    bool bssidOk = true; for (int j=0;j<6;j++){ if (bb[j] != _selectedNetwork.bssid[j]) { bssidOk=false; break; } } if (!bssidOk) continue;
-    uint16_t fc = capturedHandshake.frames[i].data[0] | (capturedHandshake.frames[i].data[1] << 8);
-    bool toDS = (fc & (1 << 8)) != 0; bool fromDS = (fc & (1 << 9)) != 0;
-    const uint8_t* thisSta = (!toDS && fromDS) ? da : (toDS && !fromDS) ? sa : (einfo.isFromAP ? da : sa);
-    if (!staLocked) { for (int j=0;j<6;j++) staMac[j] = thisSta[j]; staLocked = true; }
-    else { bool same=true; for (int j=0;j<6;j++){ if (staMac[j]!=thisSta[j]) { same=false; break; } } if (!same) { staConsistent = false; continue; } }
-    bool m1 = einfo.isFromAP && einfo.hasAck && !einfo.hasMic && !einfo.hasInstall;
-    bool m2 = !einfo.isFromAP && einfo.hasMic && !einfo.hasAck && !einfo.hasInstall;
-    bool m3 = einfo.isFromAP && einfo.hasMic && einfo.hasAck && einfo.hasInstall;
-    bool m4 = !einfo.isFromAP && einfo.hasMic && !einfo.hasAck && !einfo.hasInstall && einfo.hasSecure;
-    hasMessage1 = hasMessage1 || m1; if (m1 && !rcM1) rcM1 = einfo.replayCounter;
-    hasMessage2 = hasMessage2 || m2; if (m2 && !rcM2) rcM2 = einfo.replayCounter;
-    hasMessage3 = hasMessage3 || m3; if (m3 && !rcM3) rcM3 = einfo.replayCounter;
-    hasMessage4 = hasMessage4 || m4; if (m4 && !rcM4) rcM4 = einfo.replayCounter;
-  }
-  if (!(staLocked && staConsistent && hasMessage1 && hasMessage2 && hasMessage3 && hasMessage4)) return false;
-  if (!(rcM1 && rcM2 && rcM3 && rcM4)) return false;
-  if (!rcEquals(rcM1, rcM2)) return false;
-  if (!rcIsPlusOne(rcM3, rcM1)) return false;
-  if (!rcIsPlusOne(rcM4, rcM1)) return false;
-  return true;
-}
+// // 仅进行M1–M4形态、同一STA、BSSID匹配与回放计数模式校验，不要求Auth/Assoc近时佐证
+// static bool isFourWayStructurallyValid() {
+//   if (capturedHandshake.frameCount < 4) return false;
+//   bool hasMessage1 = false, hasMessage2 = false, hasMessage3 = false, hasMessage4 = false;
+//   bool staLocked = false; uint8_t staMac[6] = {0};
+//   bool staConsistent = true;
+//   const uint8_t *rcM1 = nullptr, *rcM2 = nullptr, *rcM3 = nullptr, *rcM4 = nullptr;
+//   for (unsigned int i = 0; i < capturedHandshake.frameCount; i++) {
+//     ParsedEapolInfo einfo;
+//     bool p = parseEapol(capturedHandshake.frames[i].data, capturedHandshake.frames[i].length, einfo);
+//     if (!p) p = parseEapolFromEthertype(capturedHandshake.frames[i].data, capturedHandshake.frames[i].length, einfo);
+//     if (!p) continue;
+//     if (!(einfo.descriptorType == 0x02 && ((einfo.keyInfo & (1 << 3)) != 0))) continue;
+//     // Derived BSSID must match target
+//     const uint8_t *da, *sa, *bb; if (!extractAddrsForDataFrame(capturedHandshake.frames[i].data, capturedHandshake.frames[i].length, da, sa, bb)) continue;
+//     bool bssidOk = true; for (int j=0;j<6;j++){ if (bb[j] != _selectedNetwork.bssid[j]) { bssidOk=false; break; } } if (!bssidOk) continue;
+//     uint16_t fc = capturedHandshake.frames[i].data[0] | (capturedHandshake.frames[i].data[1] << 8);
+//     bool toDS = (fc & (1 << 8)) != 0; bool fromDS = (fc & (1 << 9)) != 0;
+//     const uint8_t* thisSta = (!toDS && fromDS) ? da : (toDS && !fromDS) ? sa : (einfo.isFromAP ? da : sa);
+//     if (!staLocked) { for (int j=0;j<6;j++) staMac[j] = thisSta[j]; staLocked = true; }
+//     else { bool same=true; for (int j=0;j<6;j++){ if (staMac[j]!=thisSta[j]) { same=false; break; } } if (!same) { staConsistent = false; continue; } }
+//     bool m1 = einfo.isFromAP && einfo.hasAck && !einfo.hasMic && !einfo.hasInstall;
+//     bool m2 = !einfo.isFromAP && einfo.hasMic && !einfo.hasAck && !einfo.hasInstall;
+//     bool m3 = einfo.isFromAP && einfo.hasMic && einfo.hasAck && einfo.hasInstall;
+//     bool m4 = !einfo.isFromAP && einfo.hasMic && !einfo.hasAck && !einfo.hasInstall && einfo.hasSecure;
+//     hasMessage1 = hasMessage1 || m1; if (m1 && !rcM1) rcM1 = einfo.replayCounter;
+//     hasMessage2 = hasMessage2 || m2; if (m2 && !rcM2) rcM2 = einfo.replayCounter;
+//     hasMessage3 = hasMessage3 || m3; if (m3 && !rcM3) rcM3 = einfo.replayCounter;
+//     hasMessage4 = hasMessage4 || m4; if (m4 && !rcM4) rcM4 = einfo.replayCounter;
+//   }
+//   if (!(staLocked && staConsistent && hasMessage1 && hasMessage2 && hasMessage3 && hasMessage4)) return false;
+//   if (!(rcM1 && rcM2 && rcM3 && rcM4)) return false;
+//   if (!rcEquals(rcM1, rcM2)) return false;
+//   if (!rcIsPlusOne(rcM3, rcM1)) return false;
+//   if (!rcIsPlusOne(rcM4, rcM1)) return false;
+//   return true;
+// }
 

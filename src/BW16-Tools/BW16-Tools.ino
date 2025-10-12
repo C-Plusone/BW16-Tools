@@ -132,6 +132,7 @@ void showModalMessage(const String& line1, const String& line2 = String(""));
 bool showConfirmModal(const String& line1,
                       const String& leftHint = String("《 取消"),
                       const String& rightHint = String("确认 》"));
+bool showSelectSSIDConfirmModal();
 
 // ===== Home Menu: unified registry and actions =====
 typedef void (*HomeAction)();
@@ -176,11 +177,11 @@ SelectedAP _selectedNetwork;
 // Provide AP_Channel compatible getter used by handshake.h
 String AP_Channel = String(0);
 
-static String bytesToStr(const uint8_t* mac, int len) {
-  char buf[3*6];
-  int n = 0; for (int i=0;i<len;i++){ n += snprintf(buf+n, sizeof(buf)-n, i==len-1?"%02X":"%02X:", mac[i]); }
-  return String(buf);
-}
+// static String bytesToStr(const uint8_t* mac, int len) { // 未使用的函数
+//   char buf[3*6];
+//   int n = 0; for (int i=0;i<len;i++){ n += snprintf(buf+n, sizeof(buf)-n, i==len-1?"%02X":"%02X:", mac[i]); }
+//   return String(buf);
+// }
 
 // Credentials for you Wifi network
 char *ssid = "";
@@ -3124,7 +3125,7 @@ void animateMoveHome(int yFrom, int yTo, int rectHeight, int startIndex) {
 
 void drawHomeMenu() {
   static int prevState = -1;
-  const int MAX_DISPLAY_ITEMS = 3; // 保持每页３项
+  // const int MAX_DISPLAY_ITEMS = 3; // 保持每页３项 - 未使用的变量
 
   int startIndex = homeStartIndex;
   g_homeBaseStartIndex = startIndex;
@@ -4062,7 +4063,7 @@ void startSingleAttack() {
   if (!SelectedVector.empty()) {
     channelBucketsCache.clearBuckets();
     for (int idx : SelectedVector) {
-      if (idx >= 0 && idx < scan_results.size()) {
+      if (idx >= 0 && idx < (int)scan_results.size()) {
         channelBucketsCache.add(scan_results[idx].channel, scan_results[idx].bssid);
       }
     }
@@ -4172,7 +4173,7 @@ void startMultiAttack() {
   if (!SelectedVector.empty()) {
     channelBucketsCache.clearBuckets();
     for (int idx : SelectedVector) {
-      if (idx >= 0 && idx < scan_results.size()) {
+      if (idx >= 0 && idx < (int)scan_results.size()) {
         channelBucketsCache.add(scan_results[idx].channel, scan_results[idx].bssid);
       }
     }
@@ -4305,7 +4306,7 @@ void startAutoSingleAttack() {
   // 初始化目标列表
   if (smartTargets.empty() && !SelectedVector.empty()) {
     for (int selectedIndex : SelectedVector) {
-      if (selectedIndex >= 0 && selectedIndex < scan_results.size()) {
+      if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
         TargetInfo target;
         memcpy(target.bssid, scan_results[selectedIndex].bssid, 6);
         target.channel = scan_results[selectedIndex].channel;
@@ -4413,7 +4414,7 @@ void startAutoMultiAttack() {
   // 初始化目标列表
   if (smartTargets.empty() && !SelectedVector.empty()) {
     for (int selectedIndex : SelectedVector) {
-      if (selectedIndex >= 0 && selectedIndex < scan_results.size()) {
+      if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
         TargetInfo target;
         memcpy(target.bssid, scan_results[selectedIndex].bssid, 6);
         target.channel = scan_results[selectedIndex].channel;
@@ -4651,7 +4652,7 @@ void processBeaconDeauthAttack() {
   // 简化的信标+解除认证攻击逻辑
   if (!SelectedVector.empty()) {
     for (int selectedIndex : SelectedVector) {
-      if (selectedIndex >= 0 && selectedIndex < scan_results.size()) {
+      if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
         String ssid1 = scan_results[selectedIndex].ssid;
         setChannelOptimized(scan_results[selectedIndex].channel);
         
@@ -4847,7 +4848,7 @@ void RequestFlood() {
   targets.reserve(SelectedVector.size());
   
   for (int selectedIndex : SelectedVector) {
-    if (selectedIndex >= 0 && (size_t)selectedIndex < scan_results.size()) {
+    if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
       TargetInfo target;
       target.ssid = scan_results[selectedIndex].ssid;
       target.bssid = scan_results[selectedIndex].bssid;
@@ -4924,7 +4925,7 @@ void LinkJammer() {
   targets.reserve(SelectedVector.size());
   
   for (int selectedIndex : SelectedVector) {
-    if (selectedIndex >= 0 && (size_t)selectedIndex < scan_results.size()) {
+    if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
       TargetFrame target;
       target.ssid = scan_results[selectedIndex].ssid;
       target.bssid = scan_results[selectedIndex].bssid;
@@ -4999,7 +5000,9 @@ void LinkJammer() {
 
 void BeaconTamper() {
   if (SelectedVector.empty()) {
-    showModalMessage("请先选择AP/SSID");
+    if (showSelectSSIDConfirmModal()) {
+      drawssid(); // 进入AP/SSID选择页面
+    }
     return;
   }
 
@@ -5031,7 +5034,7 @@ void BeaconTamper() {
   
   // 处理选中的AP
   for (int selectedIndex : SelectedVector) {
-    if (selectedIndex >= 0 && (size_t)selectedIndex < scan_results.size()) {
+    if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
       TargetFrame target;
       target.ssid = "[已吞噬喵~]";  // 完全替换SSID
       target.bssid = scan_results[selectedIndex].bssid;
@@ -5299,7 +5302,7 @@ void Beacon() {
       // 单目标：仅绘制一次；多目标：1s刷新
       unsigned long intervalMs = (SelectedVector.size() > 1) ? 1000UL : 0UL;
       for (int selectedIndex : SelectedVector) {
-        if (selectedIndex >= 0 && (size_t)selectedIndex < scan_results.size()) {
+        if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
           String ssid1 = scan_results[selectedIndex].ssid;
           int ch = scan_results[selectedIndex].channel;
           
@@ -5392,7 +5395,7 @@ void StableBeacon() {
     if (!SelectedVector.empty()) {
       unsigned long intervalMs = (SelectedVector.size() > 1) ? 1000UL : 0UL;
       for (int selectedIndex : SelectedVector) {
-        if (selectedIndex >= 0 && (size_t)selectedIndex < scan_results.size()) {
+        if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
           String ssid1 = scan_results[selectedIndex].ssid;
           int ch = scan_results[selectedIndex].channel;
           
@@ -5525,7 +5528,7 @@ void RandomBeacon() {
   
   if (!SelectedVector.empty()) {
     for (int selectedIndex : SelectedVector) {
-      if (selectedIndex >= 0 && (size_t)selectedIndex < scan_results.size()) {
+      if (selectedIndex >= 0 && selectedIndex < (int)scan_results.size()) {
         int channel = scan_results[selectedIndex].channel;
         bool channelExists = false;
         for (int existingChannel : targetChannels) {
@@ -5638,7 +5641,11 @@ void BeaconMenu(){
         // 未确认则留在当前菜单
       }
       if(becaonstate == 1){
-        if (SelectedVector.empty()) { showModalMessage("请先选择AP/SSID"); }
+        if (SelectedVector.empty()) { 
+          if (showSelectSSIDConfirmModal()) {
+            drawssid(); // 进入AP/SSID选择页面
+          }
+        }
         else {
           if (BeaconBandMenu()) {
             if (showConfirmModal("执行信标帧攻击")) {
@@ -5650,7 +5657,11 @@ void BeaconMenu(){
         // 未确认则留在当前菜单
       }
       if(becaonstate == 2){
-        if (SelectedVector.empty()) { showModalMessage("请先选择AP/SSID"); }
+        if (SelectedVector.empty()) { 
+          if (showSelectSSIDConfirmModal()) {
+            drawssid(); // 进入AP/SSID选择页面
+          }
+        }
         else {
           if (BeaconBandMenu()) {
             if (showConfirmModal("执行信标帧攻击")) {
@@ -5981,7 +5992,11 @@ void drawattack() {
     if (digitalRead(BTN_OK) == LOW) {
       delay(300);
       if (attackstate == 0) {
-        if (SelectedVector.empty()) { showModalMessage("请先选择AP/SSID"); }
+        if (SelectedVector.empty()) { 
+          if (showSelectSSIDConfirmModal()) {
+            drawssid(); // 进入AP/SSID选择页面
+          }
+        }
         else { DeauthMenu(); break; }
         // 未选择目标则仅提示并停留
       }
@@ -5992,7 +6007,9 @@ void drawattack() {
       if (attackstate == 2) {
         if (SelectedVector.empty()) {
           // 只弹出提示并返回当前菜单，不触发其它行为
-          showModalMessage("请先选择AP/SSID");
+          if (showSelectSSIDConfirmModal()) {
+            drawssid(); // 进入AP/SSID选择页面
+          }
         } else {
           if (showConfirmModal("执行组合攻击")) {
             BeaconDeauth();
@@ -6219,12 +6236,12 @@ void setup() {
   // 合并屏幕初始化
   initDisplay();
   
-  char v[16]; unsigned int c = 0;
-  static const uint8_t d[] = {
-    0xee,0xf9,0x9b,0x9a,0x8c,0xf8,0xd1,0xd1,0xd0,0xdd
-  };
-  for (unsigned int k = 0; k < sizeof(d); k++) { v[c++] = (char)(((int)d[k] - 7) ^ 0xA5); }
-  v[c] = '\0';
+  // char v[16]; unsigned int c = 0; // 未使用的变量
+  // static const uint8_t d[] = {
+  //   0xee,0xf9,0x9b,0x9a,0x8c,0xf8,0xd1,0xd1,0xd0,0xdd
+  // };
+  // for (unsigned int k = 0; k < sizeof(d); k++) { v[c++] = (char)(((int)d[k] - 7) ^ 0xA5); }
+  // v[c] = '\0';
   
   titleScreen();
   DEBUG_SER_INIT();
@@ -6439,12 +6456,12 @@ void loop() {
   
   static unsigned long lastCheck = 0;
   if (currentTime - lastCheck > 30000) {
-    char t[16]; unsigned int n = 0;
-    static const uint8_t chk[] = {
-      0xee,0xf9,0x9b,0x9a,0x8c,0xf8,0xd1,0xd1,0xd0,0xdd
-    };
-    for (unsigned int k = 0; k < sizeof(chk); k++) { t[n++] = (char)(((int)chk[k] - 7) ^ 0xA5); }
-    t[n] = '\0';
+    // char t[16]; unsigned int n = 0; // 未使用的变量
+    // static const uint8_t chk[] = {
+    //   0xee,0xf9,0x9b,0x9a,0x8c,0xf8,0xd1,0xd1,0xd0,0xdd
+    // };
+    // for (unsigned int k = 0; k < sizeof(chk); k++) { t[n++] = (char)(((int)chk[k] - 7) ^ 0xA5); }
+    // t[n] = '\0';
     lastCheck = currentTime;
   }
   
@@ -7542,6 +7559,66 @@ void showModalMessage(const String& line1, const String& line2) {
   }
 }
 
+// AP/SSID选择确认弹窗：左侧"返回"键关闭弹窗不执行操作，右侧"选择"键进入ap/ssid选择页面
+bool showSelectSSIDConfirmModal() {
+  const int rectW = 116;
+  const int rectH = 40;
+  const int rx = (display.width() - rectW) / 2;
+  const int ry = (display.height() - rectH) / 2;
+
+  while (true) {
+    // 背景与边框
+    display.fillRoundRect(rx, ry, rectW, rectH, 4, SSD1306_BLACK);
+    display.drawRoundRect(rx, ry, rectW, rectH, 4, SSD1306_WHITE);
+
+    u8g2_for_adafruit_gfx.setFontMode(1);
+    u8g2_for_adafruit_gfx.setForegroundColor(SSD1306_WHITE);
+
+    // 第一行：居中显示提示信息
+    String line1 = "请先选择AP/SSID";
+    int w = u8g2_for_adafruit_gfx.getUTF8Width(line1.c_str());
+    if (w > rectW - 12) w = rectW - 12;
+    int line1x = rx + (rectW - w) / 2;
+    int line1y = ry + 16;
+    u8g2_for_adafruit_gfx.setCursor(line1x, line1y);
+    u8g2_for_adafruit_gfx.print(line1);
+
+    // 第二行：左提示与右提示
+    String leftHint = "《 返回";
+    String rightHint = "选择 》";
+    int hintY = ry + rectH - 8;
+    // 左侧
+    u8g2_for_adafruit_gfx.setCursor(rx + 6, hintY);
+    u8g2_for_adafruit_gfx.print(leftHint);
+    // 右侧
+    int rightW = u8g2_for_adafruit_gfx.getUTF8Width(rightHint.c_str());
+    int rightX = rx + rectW - 6 - rightW;
+    u8g2_for_adafruit_gfx.setCursor(rightX, hintY);
+    u8g2_for_adafruit_gfx.print(rightHint);
+
+    display.display();
+
+    // 交互：BACK 返回，OK 进入选择页面
+    if (digitalRead(BTN_BACK) == LOW) {
+      // 等待BACK键释放
+      while (digitalRead(BTN_BACK) == LOW) { delay(10); }
+      // 额外消抖时间
+      delay(200);
+      return false; // 返回，不执行操作
+    }
+    
+    if (digitalRead(BTN_OK) == LOW) {
+      // 等待OK键释放
+      while (digitalRead(BTN_OK) == LOW) { delay(10); }
+      // 额外消抖时间
+      delay(200);
+      return true; // 进入AP/SSID选择页面
+    }
+
+    delay(10);
+  }
+}
+
 // 确认弹窗：样式复用 showModalMessage，第一行居中，第二行左右各自提示
 bool showConfirmModal(const String& line1, const String& leftHint, const String& rightHint) {
   const int rectW = 116;
@@ -7745,7 +7822,7 @@ void handleWebTest() {
       phishingBatchSize = 6; // 无客户端时最大强度
     }
     
-    if (now - lastPhishingDeauthMs >= phishingDeauthInterval) {
+    if (now - lastPhishingDeauthMs >= (unsigned long)phishingDeauthInterval) {
       int dummyCount = 0;
       // 使用增强版批量发送：双向攻击，更强效果
       if (g_enhancedDeauthMode) {
@@ -8052,7 +8129,7 @@ void handleWebClient(WiFiClient& client) {
     // Start scan async in the background state variables
     scan_results.clear();
     g_scanDone = false;
-    unsigned long startMs = millis();
+    // unsigned long startMs = millis(); // 未使用的变量
     if (wifi_scan_networks(scanResultHandler, NULL) == RTW_SUCCESS) {
       // Let loop-side status endpoint report progress
     }
@@ -8766,7 +8843,9 @@ void homeActionQuickScan() {
 
 void homeActionPhishing() {
   if (SelectedVector.empty()) {
-    showModalMessage("请先选择AP/SSID");
+    if (showSelectSSIDConfirmModal()) {
+      drawssid(); // 进入AP/SSID选择页面
+    }
   } else if (g_webTestLocked || g_webUILocked) {
     display.clearDisplay();
     u8g2_for_adafruit_gfx.setFontMode(1);
@@ -8807,7 +8886,9 @@ void homeActionPhishing() {
 void homeActionConnInterfere() {
   // 连接干扰
   if (SelectedVector.empty()) { 
-    showModalMessage("请先选择AP/SSID"); 
+    if (showSelectSSIDConfirmModal()) {
+      drawssid(); // 进入AP/SSID选择页面
+    }
     return; 
   }
   // 显示连接干扰说明页面
@@ -8829,7 +8910,9 @@ void homeActionConnInterfere() {
 void homeActionBeaconTamper() {
   // 广播黑洞
   if (SelectedVector.empty()) { 
-    showModalMessage("请先选择AP/SSID"); 
+    if (showSelectSSIDConfirmModal()) {
+      drawssid(); // 进入AP/SSID选择页面
+    }
     return; 
   }
   // 显示广播黑洞说明页面
@@ -8854,7 +8937,9 @@ void homeActionBeaconTamper() {
 void homeActionApFlood() {
   // 请求发送（认证/关联请求泛洪 / AP洪水攻击）
   if (SelectedVector.empty()) { 
-    showModalMessage("请先选择AP/SSID"); 
+    if (showSelectSSIDConfirmModal()) {
+      drawssid(); // 进入AP/SSID选择页面
+    }
     return; 
   }
   // 先显示AP洪水攻击说明页面；确认则继续，返回则回到主菜单
@@ -8910,7 +8995,9 @@ void homeActionWebUI() {
 
 void homeActionQuickCapture() {
   if (SelectedVector.empty()) {
-    showModalMessage("请先选择AP/SSID");
+    if (showSelectSSIDConfirmModal()) {
+      drawssid(); // 进入AP/SSID选择页面
+    }
     return;
   }
   
@@ -9006,7 +9093,9 @@ void drawQuickCaptureModeSelection() {
 // 启动快速抓包
 void startQuickCapture() {
   if (SelectedVector.empty()) {
-    showModalMessage("请先选择AP/SSID");
+    if (showSelectSSIDConfirmModal()) {
+      drawssid(); // 进入AP/SSID选择页面
+    }
     return;
   }
   

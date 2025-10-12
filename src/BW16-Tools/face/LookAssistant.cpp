@@ -22,14 +22,13 @@ LookAssistant::LookAssistant(Face& face) : _face(face), Timer(4000)
 void LookAssistant::LookAt(float x, float y)
 {
 	int16_t moveX_x;
-	int16_t moveY_x;
 	int16_t moveY_y;
 	float scaleY_x;
 	float scaleY_y;
 
   // What is this witchcraft...?!
 	moveX_x = -25 * x;
-	moveY_x = -3 * x;
+	// moveY_x = -3 * x; // 未使用的变量
 	moveY_y = 20 * y;
 	scaleY_x = 1.0 - x * 0.2;
 	scaleY_y = 1.0 - (y > 0 ? y : -y) * 0.4;
@@ -40,7 +39,7 @@ void LookAssistant::LookAt(float x, float y)
 	transformation.ScaleY = scaleY_x * scaleY_y;
 	_face.RightEye.Transformation.SetDestin(transformation);
 
-	moveY_x = +3 * x;
+	// moveY_x = +3 * x; // 未使用的变量
 	scaleY_x = 1.0 + x * 0.2;
 	transformation.MoveX = moveX_x;
 	transformation.MoveY = + moveY_y; //moveY_x + moveY_y;
